@@ -13,18 +13,33 @@ source:
     - 0001-rpcgen-follow-the-CPP-and-RPCGEN_CPP-enviromental-va.patch
 
 build:
-  number: 0
+  number: 1
   skip:
     - win
   script:
     - autoreconf -fi
-    - ./configure --prefix=$PREFIX
+    - if [[ "${CONDA_BUILD_CROSS_COMPILATION:-0}" == "1" ]]; then CROSS_ARGS="--build=${BUILD} --host=${HOST}"; fi
+    - ./configure --prefix=$PREFIX ${CROSS_ARGS:-}
+    # The rpcsvc headers are made by running the rpcgen just built
+    # (rpcsvc/Makefile.am: $(top_builddir)/rpcgen/rpcgen -h -o $@ $<).
+    # Cross-compiled, that rpcgen is for the target and cannot run here: make
+    # them first, same command, with the build machine's rpcgen; make then finds
+    # them up to date. The installed rpcgen is still the one built for the target.
+    - |
+      if [[ "${CONDA_BUILD_CROSS_COMPILATION:-0}" == "1" ]]; then
+        for x in rpcsvc/*.x; do
+          "${BUILD_PREFIX}/bin/rpcgen" -h -o "${x%.x}.h" "$x"
+        done
+      fi
     - make
     - make install
 
 requirements:
   build:
     - ${{ compiler('c') }}
+    - if: build_platform != target_platform
+      then:
+        - rpcsvc-proto
     - ${{ stdlib('c') }}
     - autoconf
     - automake
